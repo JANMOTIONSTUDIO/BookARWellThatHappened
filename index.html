@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Bird in AR</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+  #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;display:none;z-index:0}
+  canvas{position:fixed;inset:0;display:block;z-index:1}
+  #clip{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
+  #start{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;background:radial-gradient(circle at 50% 30%,#1d3b2a,#000 70%)}
+  h1{margin:0;font-size:30px}
+  p{margin:0;opacity:.85;max-width:320px;line-height:1.45}
+  button,.btn{font:inherit;font-size:17px;padding:14px 24px;border-radius:999px;border:0;background:#fff;color:#000;font-weight:600;text-decoration:none;cursor:pointer}
+  .ghost{background:rgba(255,255,255,.18);color:#fff;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  #err{color:#ffb4b4;font-size:14px}
+  #overlay{position:fixed;inset:0;z-index:5;pointer-events:none;display:none}
+  #hint{position:absolute;top:calc(env(safe-area-inset-top) + 16px);left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:10px 16px;border-radius:12px;font-size:15px;text-align:center;width:max-content;max-width:85%;transition:opacity .4s}
+  #bar{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 20px);left:0;right:0;display:flex;justify-content:center;gap:10px;pointer-events:auto}
+  #bar button{padding:12px 16px;font-size:15px}
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+<!-- Put your clip in the repo next to this file and call it video.mp4 -->
+<video id="clip" src="video.mp4" playsinline webkit-playsinline loop muted preload="auto"></video>
+
+<div id="start">
+  <h1>🐦 Bird in AR</h1>
+  <p>Point your phone around the room and the video will appear in the space in front of you.</p>
+  <button id="go">Start AR</button>
+  <a class="btn ghost" href="video.mp4">Just watch the video</a>
+  <p id="err"></p>
+</div>
+
+<div id="overlay">
+  <div id="hint"></div>
+  <div id="bar">
+    <button id="sound" class="ghost">🔇 Sound off</button>
+    <button id="recenter" class="ghost">Recenter</button>
+    <button id="exit" class="ghost">Exit</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ---- Settings you can tweak ----
+const VIDEO_HEIGHT = 0.85;     // height of the video screen in metres (about 1.6 m wide for this clip)
+const FALLBACK_DISTANCE = 2.2; // how far away it floats on iPhone (metres)
+
+const $ = id => document.getElementById(id);
+const clip = $('clip'), cam = $('cam'), hint = $('hint'), overlay = $('overlay');
+
+// ---- three.js setup ----
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 0);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 50);
+
+// The video "screen"
+const tex = new THREE.VideoTexture(clip);
+tex.colorSpace = THREE.SRGBColorSpace;
+const tv = new THREE.Group();
+const picture = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, toneMapped: false }));
+const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide }));
+frameMesh.position.z = -0.005;
+tv.add(frameMesh, picture);
+tv.visible = false;
+scene.add(tv);
+
+function sizeTV() {
+  const aspect = (clip.videoWidth && clip.videoHeight) ? clip.videoWidth / clip.videoHeight : 1280 / 676;
+  const w = VIDEO_HEIGHT * aspect;
+  picture.scale.set(w, VIDEO_HEIGHT, 1);
+  frameMesh.scale.set(w + 0.04, VIDEO_HEIGHT + 0.04, 1);
+}
+clip.addEventListener('loadedmetadata', sizeTV);
+sizeTV();
+
+addEventListener('resize', () => {
+  if (renderer.xr.isPresenting) return;
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---- UI ----
+let mode = null;
+function showUI(text) {
+  $('start').style.display = 'none';
+  overlay.style.display = 'block';
+  setHint(text);
+}
+let hintTimer;
+function setHint(text, hideAfterMs) {
+  hint.textContent = text;
+  hint.style.opacity = 1;
+  clearTimeout(hintTimer);
+  if (hideAfterMs) hintTimer = setTimeout(() => hint.style.opacity = 0, hideAfterMs);
+}
+$('sound').addEventListener('click', () => {
+  clip.muted = !clip.muted;
+  clip.play().catch(() => {});
+  $('sound').textContent = clip.muted ? '🔇 Sound off' : '🔊 Sound on';
+});
+$('recenter').addEventListener('click', () => mode === 'xr' ? placeInFront() : (alphaOffset = null));
+$('exit').addEventListener('click', () => {
+  const s = renderer.xr.getSession();
+  s ? s.end() : location.reload();
+});
+// Stop taps on the buttons from also placing the video in WebXR
+$('bar').addEventListener('beforexrselect', e => e.preventDefault());
+
+// Check WebXR support up front so the tap goes straight into the session
+let xrSupported = false;
+if (navigator.xr) navigator.xr.isSessionSupported('immersive-ar').then(v => xrSupported = v).catch(() => {});
+
+$('go').addEventListener('click', () => {
+  // iPhone needs motion permission requested directly inside the tap
+  let motion = Promise.resolve('granted');
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    motion = DeviceOrientationEvent.requestPermission().catch(() => 'denied');
+  }
+  clip.play().catch(() => {});
+  const run = xrSupported ? startXR() : motion.then(startFallback);
+  run.catch(e => {
+    $('err').textContent = 'Could not start AR (' + (e.message || e) + '). Tap "Just watch the video" instead.';
+  });
+});
+
+// =========================================================
+// Mode 1: Real AR with WebXR (Android / Chrome)
+// Finds the floor, tap to stand the video on it.
+// =========================================================
+const reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.08, 0.11, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffffff }));
+reticle.matrixAutoUpdate = false;
+reticle.visible = false;
+scene.add(reticle);
+let lastHit = null;
+
+async function startXR() {
+  renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local');
+  const session = await navigator.xr.requestSession('immersive-ar', {
+    requiredFeatures: ['hit-test'],
+    optionalFeatures: ['dom-overlay'],
+    domOverlay: { root: overlay }
+  });
+  await renderer.xr.setSession(session);
+  mode = 'xr';
+  showUI('Move your phone slowly to find the floor, then tap to place the video.');
+
+  const viewerSpace = await session.requestReferenceSpace('viewer');
+  const hitSource = await session.requestHitTestSource({ space: viewerSpace });
+  session.addEventListener('select', placeAtHit);
+  session.addEventListener('end', () => location.reload());
+
+  renderer.setAnimationLoop((t, frame) => {
+    if (frame) {
+      const hits = frame.getHitTestResults(hitSource);
+      if (hits.length) {
+        const pose = hits[0].getPose(renderer.xr.getReferenceSpace());
+        reticle.matrix.fromArray(pose.transform.matrix);
+        lastHit = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+        reticle.visible = !tv.visible;
+      } else {
+        lastHit = null;
+        reticle.visible = false;
+      }
+    }
+    renderer.render(scene, camera);
+  });
+}
+
+function faceViewer() {
+  const p = new THREE.Vector3();
+  renderer.xr.getCamera().getWorldPosition(p);
+  tv.lookAt(p.x, tv.position.y, p.z);
+}
+
+function placeAtHit() {
+  if (!lastHit) return;
+  tv.position.set(lastHit.x, lastHit.y + VIDEO_HEIGHT / 2 + 0.05, lastHit.z);
+  faceViewer();
+  tv.visible = true;
+  clip.play().catch(() => {});
+  setHint('Tap somewhere else to move it. Turn the sound on below.', 4000);
+}
+
+function placeInFront() {
+  const xrCam = renderer.xr.getCamera();
+  const pos = new THREE.Vector3(), dir = new THREE.Vector3();
+  xrCam.getWorldPosition(pos);
+  xrCam.getWorldDirection(dir);
+  dir.y = 0; dir.normalize();
+  tv.position.copy(pos).addScaledVector(dir, 2);
+  faceViewer();
+  tv.visible = true;
+}
+
+// =========================================================
+// Mode 2: Camera + motion sensors (iPhone, and anything without WebXR)
+// The video floats in front of you and stays put as you look around.
+// =========================================================
+let orient = null, alphaOffset = null;
+const euler = new THREE.Euler(), qTmp = new THREE.Quaternion();
+const qFix = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // look out the back of the phone
+const zAxis = new THREE.Vector3(0, 0, 1);
+
+async function startFallback(motionPermission) {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+  cam.srcObject = stream;
+  cam.style.display = 'block';
+  await cam.play().catch(() => {});
+  mode = 'fallback';
+
+  tv.position.set(0, 0, -FALLBACK_DISTANCE);
+  tv.visible = true;
+
+  if (motionPermission === 'granted') {
+    addEventListener('deviceorientation', e => { if (e.alpha !== null) orient = e; });
+  }
+  showUI(motionPermission === 'granted'
+    ? 'Look around — the video stays where it is. Tap Recenter to bring it back in front of you.'
+    : 'Motion access was denied, so the video stays fixed on screen.');
+  setHint(hint.textContent, 5000);
+
+  renderer.setAnimationLoop(() => {
+    if (orient) {
+      const d = THREE.MathUtils.degToRad;
+      const alpha = d(orient.alpha);
+      if (alphaOffset === null) alphaOffset = -alpha; // put the video straight ahead
+      const screenAngle = d((screen.orientation && screen.orientation.angle) || window.orientation || 0);
+      euler.set(d(orient.beta), alpha + alphaOffset, -d(orient.gamma), 'YXZ');
+      camera.quaternion.setFromEuler(euler);
+      camera.quaternion.multiply(qFix);
+      camera.quaternion.multiply(qTmp.setFromAxisAngle(zAxis, -screenAngle));
+    }
+    renderer.render(scene, camera);
+  });
+}
+</script>
+</body>
+</html>
