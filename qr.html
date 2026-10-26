@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AR QR Code</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f4f2;color:#111;margin:0;padding:24px;display:flex;flex-direction:column;align-items:center;gap:16px}
+  h1{margin:8px 0 0;font-size:24px}
+  input{width:min(520px,90vw);font-size:16px;padding:12px;border:1px solid #ccc;border-radius:10px}
+  #qr{background:#fff;padding:24px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  .row{display:flex;gap:10px}
+  button,a{font:inherit;font-size:16px;padding:12px 20px;border-radius:999px;border:0;background:#111;color:#fff;text-decoration:none;cursor:pointer}
+  p{margin:0;color:#555;text-align:center;max-width:520px}
+</style>
+</head>
+<body>
+  <h1>QR code for your AR page</h1>
+  <p>The link below is filled in for you once this page is on GitHub Pages. Check it, then download and print the code.</p>
+  <input id="url">
+  <div id="qr"></div>
+  <div class="row">
+    <button id="make">Update QR</button>
+    <a id="dl" download="ar-qr-code.png">Download PNG</a>
+  </div>
+<script>
+  const input = document.getElementById('url');
+  input.value = location.href.replace(/qr\.html.*$/, '');
+  const qr = new QRCode(document.getElementById('qr'), { width: 512, height: 512, correctLevel: QRCode.CorrectLevel.H });
+  function make() {
+    qr.makeCode(input.value.trim());
+    setTimeout(() => {
+      const c = document.querySelector('#qr canvas');
+      if (c) document.getElementById('dl').href = c.toDataURL('image/png');
+    }, 50);
+  }
+  document.getElementById('make').onclick = make;
+  input.onkeydown = e => { if (e.key === 'Enter') make(); };
+  make();
+</script>
+</body>
+</html>
