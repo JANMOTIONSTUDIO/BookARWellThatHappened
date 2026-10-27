@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lemon Drizzle in AR</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;display:none;z-index:0}
+  canvas{position:fixed;inset:0;display:block;z-index:1;touch-action:none}
+  button{font:inherit;border:0;border-radius:999px;font-weight:600;cursor:pointer}
+
+  /* Start screen */
+  #start{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;color:#2b2100;
+    background:radial-gradient(circle at 50% 25%,#fff8cc,#f6dc5c 60%,#e2b230)}
+  #start .lemon{font-size:64px;line-height:1}
+  h1{margin:0;font-size:30px}
+  #start p{margin:0;max-width:330px;line-height:1.45;opacity:.9}
+  .primary{font-size:17px;padding:14px 26px;background:#2b2100;color:#fff}
+  .soft{font-size:17px;padding:14px 26px;background:rgba(43,33,0,.12);color:#2b2100}
+  #err{color:#9a0000;font-size:14px}
+
+  /* AR overlay */
+  #overlay{position:fixed;inset:0;z-index:5;pointer-events:none;display:none}
+  #hint{display:none;position:absolute;top:calc(env(safe-area-inset-top) + 14px);left:50%;transform:translateX(-50%);background:rgba(30,24,0,.72);padding:10px 16px;border-radius:14px;font-size:15px;text-align:center;width:max-content;max-width:86%;line-height:1.35;transition:opacity .4s}
+  #panel{display:none;position:absolute;left:0;right:0;bottom:0;padding:12px 12px calc(env(safe-area-inset-bottom) + 14px);flex-direction:column;align-items:center;gap:10px}
+  #chips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:420px;pointer-events:auto}
+  .chip{font-size:13px;font-weight:500;padding:7px 11px;background:rgba(0,0,0,.55);color:#fff}
+  .chip.done{background:#f7d73a;color:#2b2100}
+  .chip.done::before{content:"✓ "}
+  #action{display:none;pointer-events:auto;background:#f7d73a;color:#2b2100;font-size:18px;padding:15px 28px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+  #bar{display:flex;gap:8px;pointer-events:auto}
+  #bar button{font-size:14px;padding:10px 14px;background:rgba(0,0,0,.5);color:#fff}
+
+  /* Recipe card */
+  #recipe{display:none;position:absolute;inset:0;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.5);pointer-events:auto}
+  .card{background:#fffdf3;color:#2b2100;border-radius:20px;max-width:420px;width:100%;max-height:86vh;overflow:auto;padding:22px 20px;box-shadow:0 10px 40px rgba(0,0,0,.4);box-sizing:border-box}
+  .card h2{margin:0;font-size:24px}
+  .card h3{margin:18px 0 6px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#8a6d10}
+  .card ul,.card ol{margin:0;padding-left:20px;line-height:1.5}
+  .card li{margin:3px 0}
+  .card .row{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+  .card .row button{flex:1;font-size:16px;padding:12px 16px}
+  .card .row .again{background:#f7d73a;color:#2b2100}
+  .card .row .close{background:#2b2100;color:#fff}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<div id="start">
+  <div class="lemon">🍋</div>
+  <h1>Lemon Drizzle in AR</h1>
+  <p>Bake a lemon drizzle cake right in front of you. Tap each ingredient to drop it in the bowl, then mix, bake and drizzle!</p>
+  <button id="go" class="primary">Start baking</button>
+  <button id="justRecipe" class="soft">Just show me the recipe</button>
+  <p id="err"></p>
+</div>
+
+<div id="overlay">
+  <div id="hint"></div>
+  <div id="panel">
+    <div id="chips"></div>
+    <button id="action"></button>
+    <div id="bar">
+      <button id="recipeBtn">📖 Recipe</button>
+      <button id="sound">🔊 Sound</button>
+      <button id="recenter">Recenter</button>
+      <button id="exit">Exit</button>
+    </div>
+  </div>
+
+  <div id="recipe">
+    <div class="card">
+      <h2>🍋 Lemon Drizzle Cake</h2>
+      <h3>Ingredients</h3>
+      <ul>
+        <li>225 g self-raising flour (1¾ cups)</li>
+        <li>175 g caster sugar (¾ cup), plus 75 g (⅓ cup) for the drizzle</li>
+        <li>175 g unsalted butter, at room temperature (¾ cup)</li>
+        <li>3 medium eggs</li>
+        <li>2 tablespoons full-fat milk</li>
+        <li>Zest and juice of 2 large lemons</li>
+        <li>1 teaspoon baking powder</li>
+      </ul>
+      <h3>Method</h3>
+      <!-- EDIT THESE STEPS to match the method in your book -->
+      <ol>
+        <li>Heat the oven to 180°C (160°C fan, gas 4). Grease and line a 900 g (2 lb) loaf tin.</li>
+        <li>Beat the butter and 175 g sugar together until pale and fluffy.</li>
+        <li>Beat in the eggs one at a time, then fold in the flour, baking powder, lemon zest and milk.</li>
+        <li>Spoon into the tin and bake for 45–50 minutes, until a skewer comes out clean.</li>
+        <li>Mix the lemon juice with the 75 g sugar. Prick the warm cake all over and pour the drizzle on top. Leave to cool in the tin.</li>
+      </ol>
+      <div class="row">
+        <button class="again" id="again">Bake again</button>
+        <button class="close" id="closeRecipe">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// ---- Settings you can tweak ----
+const FALLBACK_DISTANCE = 1.5;  // iPhone: how far away the kitchen floats (metres)
+const FALLBACK_DROP = 0.35;     // iPhone: how far below eye level it sits (metres)
+const FALLBACK_TILT = 0.45;     // iPhone: tilt towards the viewer so you can see into the bowl
+
+const INGREDIENTS = [
+  { id:'flour',  chip:'Flour',  name:'Self-raising flour', qty:'225 g',                 color:0xf3ede0 },
+  { id:'sugar',  chip:'Sugar',  name:'Caster sugar',       qty:'175 g (+75 g drizzle)', color:0xfffdf8 },
+  { id:'butter', chip:'Butter', name:'Unsalted butter',    qty:'175 g, softened',       color:0xf6da7c },
+  { id:'eggs',   chip:'Eggs',   name:'Medium eggs',        qty:'× 3',                   color:0xf2b83e },
+  { id:'milk',   chip:'Milk',   name:'Full-fat milk',      qty:'2 tbsp',                color:0xfffaf0 },
+  { id:'lemons', chip:'Lemons', name:'Lemons',             qty:'zest & juice of 2',     color:0xf6dc33 },
+  { id:'bp',     chip:'Baking powder', name:'Baking powder', qty:'1 tsp',               color:0xffffff },
+];
+
+const $ = id => document.getElementById(id);
+const cam = $('cam'), hint = $('hint'), overlay = $('overlay');
+
+// ---------- three.js setup ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 0);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 50);
+scene.add(new THREE.HemisphereLight(0xfffbea, 0x8c7b62, 2.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+sun.position.set(0.6, 2, 1.2);
+scene.add(sun);
+
+addEventListener('resize', () => {
+  if (renderer.xr.isPresenting) return;
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- small helpers ----------
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0, ...o });
+const easeOut = k => 1 - Math.pow(1 - k, 3);
+const easeIn = k => k * k * k;
+
+function rr(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function canvasTex(w, h, draw) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+function makeLabel(title, sub) {
+  const tex = canvasTex(512, 170, (g, w, h) => {
+    g.fillStyle = 'rgba(255,253,243,0.95)'; rr(g, 6, 6, w - 12, h - 12, 40); g.fill();
+    g.strokeStyle = '#e7c63a'; g.lineWidth = 6; g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#2b2100'; g.font = `700 52px ${FONT}`; g.fillText(title, w / 2, 62, w - 40);
+    g.fillStyle = '#7a6418'; g.font = `500 40px ${FONT}`; g.fillText(sub, w / 2, 122, w - 40);
+  });
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  s.scale.set(0.16, 0.053, 1); s.renderOrder = 10;
+  return s;
+}
+function shadow(r, o = 0.2) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: o, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.001;
+  return m;
+}
+
+// ---------- ingredient models (all built from simple shapes) ----------
+function bag(base, band, text) {
+  const tex = canvasTex(256, 384, (g, w, h) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    g.fillStyle = band; g.fillRect(0, h * 0.36, w, h * 0.32);
+    g.fillStyle = '#fff'; g.font = `800 44px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const lines = text.split('\n');
+    lines.forEach((l, i) => g.fillText(l, w / 2, h * 0.52 + (i - (lines.length - 1) / 2) * 50));
+  });
+  const side = mat(base, { roughness: 0.85 });
+  const front = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 });
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.115, 0.045), [side, side, side, side, front, front]);
+  body.position.y = 0.0575;
+  const fold = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.02, 0.014), side);
+  fold.position.y = 0.124;
+  g.add(body, fold);
+  return g;
+}
+function butterBlock() {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.036, 0.05, 2, 0.004), mat(0xf8e48e, { roughness: 0.5 }));
+  const foil = new THREE.Mesh(new THREE.BoxGeometry(0.066, 0.038, 0.052), mat(0xd8b24a, { metalness: 0.6, roughness: 0.35 }));
+  foil.position.x = 0.018;
+  g.add(b, foil); g.position.y = 0.018;
+  return g;
+}
+function egg() {
+  const e = new THREE.Mesh(new THREE.SphereGeometry(0.02, 20, 14), mat(0xe8cba0, { roughness: 0.7 }));
+  e.scale.set(1, 1.28, 1); e.position.y = 0.0256;
+  return e;
+}
+function milkBottle() {
+  const pts = [[0, 0], [0.027, 0], [0.03, 0.004], [0.03, 0.075], [0.026, 0.095], [0.014, 0.115], [0.012, 0.13], [0, 0.13]]
+    .map(([x, y]) => new THREE.Vector2(x, y));
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 32), mat(0xfbfbf6, { roughness: 0.3, side: THREE.DoubleSide })));
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.012, 20), mat(0x2b6fd6));
+  cap.position.y = 0.135;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0305, 0.0305, 0.03, 32, 1, true), mat(0x2b6fd6, { side: THREE.DoubleSide }));
+  band.position.y = 0.045;
+  g.add(cap, band);
+  return g;
+}
+function lemon() {
+  const g = new THREE.Group(); const m = mat(0xf5d523, { roughness: 0.45 });
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.03, 24, 16), m); b.scale.set(1.3, 1, 1); g.add(b);
+  for (const s of [-1, 1]) {
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), m);
+    tip.position.x = s * 0.038; tip.scale.set(1.3, 0.8, 0.8); g.add(tip);
+  }
+  g.position.y = 0.03;
+  return g;
+}
+function tub() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.06, 28), mat(0xd23c2e)); body.position.y = 0.03;
+  const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.0295, 0.0295, 0.012, 28), mat(0xffffff)); lid.position.y = 0.066;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0285, 0.0285, 0.022, 28, 1, true), mat(0xfff4d6, { side: THREE.DoubleSide }));
+  band.position.y = 0.03; band.scale.setScalar(1.01);
+  g.add(body, lid, band);
+  return g;
+}
+const BUILD = {
+  flour:  () => [bag('#f2e9d6', '#3b6db3', 'SELF\nRAISING')],
+  sugar:  () => [bag('#ffffff', '#d6507b', 'CASTER\nSUGAR')],
+  butter: () => [butterBlock()],
+  eggs:   () => [[-0.026, 0.01], [0.026, 0.01], [0, -0.024]].map(([x, z]) => { const e = egg(); e.position.x = x; e.position.z = z; return e; }),
+  milk:   () => [milkBottle()],
+  lemons: () => [[-0.042, 0.012, 0.4], [0.042, -0.012, -0.3]].map(([x, z, r]) => { const l = lemon(); l.position.x = x; l.position.z = z; l.rotation.y = r; return l; }),
+  bp:     () => [tub()],
+};
+
+// ---------- the bowl ----------
+const BOWL_R = 0.13, WALL = 0.006, RIM_A = 1.45, INNER_R = BOWL_R - WALL;
+function bowlMesh() {
+  const pts = [new THREE.Vector2(0, 0), new THREE.Vector2(0.046, 0)];
+  const a0 = Math.asin(0.048 / BOWL_R);
+  for (let i = 0; i <= 16; i++) { const a = a0 + (RIM_A - a0) * i / 16; pts.push(new THREE.Vector2(BOWL_R * Math.sin(a), BOWL_R * (1 - Math.cos(a)))); }
+  for (let i = 16; i >= 0; i--) { const a = RIM_A * i / 16; pts.push(new THREE.Vector2(INNER_R * Math.sin(a), BOWL_R - INNER_R * Math.cos(a))); }
+  return new THREE.Mesh(new THREE.LatheGeometry(pts, 48), mat(0xa9d4e4, { roughness: 0.35, side: THREE.DoubleSide }));
+}
+const fillLevel = n => 0.012 + 0.073 * n / INGREDIENTS.length;
+const swirlTex = canvasTex(256, 256, (g, w) => {
+  g.fillStyle = '#fff'; g.fillRect(0, 0, w, w);
+  g.strokeStyle = 'rgba(0,0,0,.09)'; g.lineWidth = 7;
+  for (let s = 0; s < 3; s++) {
+    g.beginPath();
+    for (let t = 0; t <= 1; t += 0.01) {
+      const a = t * Math.PI * 4 + s * 2.1, r = t * 122;
+      const x = 128 + Math.cos(a) * r, y = 128 + Math.sin(a) * r;
+      t ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke();
+  }
+});
+const sliceTex = canvasTex(256, 256, (g, w) => {
+  const c = w / 2;
+  g.fillStyle = '#f2cf1d'; g.beginPath(); g.arc(c, c, c, 0, 7); g.fill();
+  g.fillStyle = '#fffbe0'; g.beginPath(); g.arc(c, c, c * 0.88, 0, 7); g.fill();
+  g.fillStyle = '#f9e27a';
+  for (let i = 0; i < 10; i++) {
+    g.beginPath(); g.moveTo(c, c);
+    g.arc(c, c, c * 0.8, i * Math.PI / 5 + 0.05, (i + 1) * Math.PI / 5 - 0.05);
+    g.closePath(); g.fill();
+  }
+  g.fillStyle = '#fffbe0'; g.beginPath(); g.arc(c, c, c * 0.1, 0, 7); g.fill();
+});
+
+// ---------- the kitchen scene ----------
+const kitchen = new THREE.Group();
+kitchen.visible = false;
+scene.add(kitchen);
+
+let items = [], bowlGroup, fill, fillColor, spoonPivot, spoon;
+let cake, loafGroup, loafMat, icing, drips, slices, zest;
+let state = 'idle', added = 0;
+
+function setFill(y) {
+  fill.position.y = y;
+  const r = Math.sqrt(Math.max(0, INNER_R * INNER_R - (BOWL_R - y) * (BOWL_R - y))) * 0.985;
+  fill.scale.set(r, r, 1);
+}
+
+function buildKitchen() {
+  tweens.length = 0;
+  while (kitchen.children.length) kitchen.remove(kitchen.children[0]);
+  added = 0;
+  fillColor = new THREE.Color(0xffffff);
+
+  bowlGroup = new THREE.Group();
+  bowlGroup.add(shadow(0.135, 0.15), bowlMesh());
+  fill = new THREE.Mesh(new THREE.CircleGeometry(1, 48), mat(0xffffff, { roughness: 0.9, map: swirlTex }));
+  fill.rotation.x = -Math.PI / 2; fill.visible = false;
+  bowlGroup.add(fill);
+
+  spoonPivot = new THREE.Group(); spoonPivot.visible = false;
+  spoon = new THREE.Group();
+  const wood = mat(0xc89660, { roughness: 0.7 });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), wood); head.scale.set(0.022, 0.006, 0.03);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.006, 0.2, 10), wood); handle.position.y = 0.1;
+  spoon.add(head, handle); spoon.position.x = 0.035; spoon.rotation.z = -0.35;
+  spoonPivot.add(spoon);
+  bowlGroup.add(spoonPivot);
+  kitchen.add(bowlGroup);
+
+  items = INGREDIENTS.map((def, i) => {
+    const a = THREE.MathUtils.degToRad(-95 + 190 * i / (INGREDIENTS.length - 1));
+    const g = new THREE.Group();
+    g.position.set(Math.sin(a) * 0.27, 0, -Math.cos(a) * 0.27);
+    const model = new THREE.Group();
+    const pieces = BUILD[def.id]();
+    model.add(...pieces);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.052, 0.06, 40),
+      new THREE.MeshBasicMaterial({ color: 0xf7d73a, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
+    const label = makeLabel(def.name, def.qty);
+    label.position.y = i % 2 ? 0.3 : 0.17;
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.062, 10, 8),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.position.y = 0.06;
+    const sh = shadow(0.045, 0.18);
+    g.add(sh, ring, model, label, hit);
+    const item = { def, group: g, model, pieces, ring, label, hit, shadow: sh, added: false, phase: i * 1.3 };
+    hit.userData.item = item;
+    kitchen.add(g);
+    return item;
+  });
+
+  buildCake();
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('done'));
+  setAction(null);
+  state = 'add';
+}
+
+function buildCake() {
+  cake = new THREE.Group(); cake.visible = false;
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.16, 0.008, 48), mat(0xffffff, { roughness: 0.3 }));
+  plate.position.y = 0.004;
+  cake.add(shadow(0.18, 0.22), plate);
+
+  loafGroup = new THREE.Group(); loafGroup.position.y = 0.008;
+  loafMat = mat(0xf3dc98, { roughness: 0.85 });
+  const loaf = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.09, 0.11, 4, 0.025), loafMat);
+  loaf.position.y = 0.045;
+  loafGroup.add(loaf);
+  cake.add(loafGroup);
+
+  const icingMat = mat(0xfffbe6, { roughness: 0.25 });
+  icing = new THREE.Mesh(new RoundedBoxGeometry(0.236, 0.01, 0.106, 2, 0.0045), icingMat);
+  icing.position.y = 0.103; icing.visible = false;
+  cake.add(icing);
+
+  drips = [];
+  const spots = [];
+  for (let i = 0; i < 7; i++) { const x = -0.1 + 0.2 * i / 6; spots.push([x + (Math.random() - 0.5) * 0.01, 0.0545], [x + 0.012, -0.0545]); }
+  spots.push([0.119, 0.02], [0.119, -0.025], [-0.119, 0], [-0.119, -0.03]);
+  for (const [x, z] of spots) {
+    const L = 0.01 + Math.random() * 0.03;
+    const geo = new THREE.CapsuleGeometry(0.005, L, 4, 8); geo.translate(0, -L / 2, 0);
+    const d = new THREE.Mesh(geo, icingMat);
+    d.position.set(x, 0.104, z); d.scale.y = 0.001; d.visible = false;
+    cake.add(d); drips.push(d);
+  }
+
+  const sliceMat = new THREE.MeshStandardMaterial({ map: sliceTex, roughness: 0.4 });
+  slices = [-0.065, 0, 0.065].map((x, i) => {
+    const s = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.004, 32), [mat(0xf2cf1d), sliceMat, sliceMat]);
+    s.position.set(x, 0.11, (i - 1) * 0.008); s.rotation.set((Math.random() - 0.5) * 0.15, Math.random() * 3, (Math.random() - 0.5) * 0.15);
+    s.visible = false; cake.add(s);
+    return s;
+  });
+
+  const zm = mat(0xf5d21e, { roughness: 0.5 });
+  const zg = new THREE.BoxGeometry(0.006, 0.0015, 0.0015);
+  zest = [];
+  for (let i = 0; i < 40; i++) {
+    const z = new THREE.Mesh(zg, zm);
+    z.position.set((Math.random() - 0.5) * 0.2, 0.109, (Math.random() - 0.5) * 0.09);
+    z.rotation.y = Math.random() * 3; z.visible = false;
+    cake.add(z); zest.push(z);
+  }
+  kitchen.add(cake);
+}
+
+// ---------- animation helpers ----------
+let now = performance.now() / 1000;
+const tweens = [];
+function tween(dur, delay, fn, done) { tweens.push({ start: now + delay, dur, fn, done }); }
+function updateTweens() {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const tw = tweens[i];
+    if (!tw) continue;
+    const k = (now - tw.start) / tw.dur;
+    if (k < 0) continue;
+    tw.fn(Math.min(k, 1));
+    if (k >= 1) { tweens.splice(tweens.indexOf(tw), 1); tw.done && tw.done(); }
+  }
+}
+function fadeOut(material, dur) { const o = material.opacity; tween(dur, 0, k => material.opacity = o * (1 - k)); }
+
+const dotGeo = new THREE.SphereGeometry(0.005, 8, 6);
+function puff(pos, color, n = 14, speed = 0.35, life = 0.7) {
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color, transparent: true }));
+    m.position.copy(pos); kitchen.add(m);
+    const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.4, Math.random() - 0.5)
+      .multiplyScalar(speed * (0.5 + Math.random() * 0.5));
+    tween(life, 0, k => {
+      const t = k * life;
+      m.position.set(pos.x + v.x * t, Math.max(pos.y, pos.y + v.y * t - 1.2 * t * t), pos.z + v.z * t);
+      m.material.opacity = 1 - k;
+    }, () => { kitchen.remove(m); m.material.dispose(); });
+  }
+}
+const sparkle = pos => { puff(pos, 0xfff3a0, 30, 0.5, 1.1); puff(pos, 0xffffff, 16, 0.4, 1); };
+
+// ---------- sound & haptics ----------
+let actx = null, soundOn = true;
+function initAudio() {
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
+}
+function tone(f0, f1, dur, type = 'sine', vol = 0.25, delay = 0) {
+  if (!actx || !soundOn) return;
+  const t = actx.currentTime + delay;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+const plop = () => tone(520, 140, 0.18, 'sine', 0.3);
+const chime = () => { tone(880, 880, 0.35, 'triangle', 0.18); tone(1320, 1320, 0.5, 'triangle', 0.14, 0.12); };
+const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+
+// ---------- the baking steps ----------
+function addIngredient(item) {
+  if (!item || item.added || state !== 'add' || !kitchen.visible) return;
+  item.added = true;
+  buzz(15);
+  fadeOut(item.label.material, 0.3); fadeOut(item.ring.material, 0.3); fadeOut(item.shadow.material, 0.3);
+  const n = item.pieces.length;
+  item.pieces.forEach((p, j) => {
+    kitchen.attach(p);
+    const s0 = p.position.clone(), sc = p.scale.clone(), r0 = p.rotation.x;
+    const target = new THREE.Vector3((Math.random() - 0.5) * 0.03, fillLevel(added) + 0.02, (Math.random() - 0.5) * 0.03);
+    tween(0.85, j * 0.2, k => {
+      p.position.lerpVectors(s0, target, k);
+      p.position.y += Math.sin(Math.PI * k) * 0.2;
+      p.rotation.x = r0 + k * 3;
+      const s = k < 0.65 ? 1 : Math.max(0.001, 1 - (k - 0.65) / 0.35);
+      p.scale.copy(sc).multiplyScalar(s);
+    }, () => {
+      p.visible = false;
+      puff(target, item.def.color, 14);
+      plop();
+      if (j === n - 1) landed(item);
+    });
+  });
+}
+
+function landed(item) {
+  const from = fill.visible ? fill.position.y : fillLevel(0);
+  added++;
+  $('chip-' + item.def.id).classList.add('done');
+  fillColor.lerp(new THREE.Color(item.def.color), 1 / added);
+  fill.material.color.copy(fillColor);
+  fill.visible = true;
+  const to = fillLevel(added);
+  tween(0.5, 0, k => setFill(from + (to - from) * easeOut(k)));
+  const left = INGREDIENTS.length - added;
+  if (left > 0) setHint(`${item.def.name} added! ${left} to go.`);
+  else { state = 'mix'; setHint('Everything’s in! Time to mix.'); setAction('Mix it! 🥄'); chime(); buzz([30, 60, 30]); }
+}
+
+function mix() {
+  state = 'busy'; setAction(null); setHint('Mixing…');
+  spoon.position.y = fill.position.y + 0.003;
+  spoonPivot.visible = true; spoonPivot.scale.setScalar(0.001);
+  const c0 = fill.material.color.clone(), c1 = new THREE.Color(0xf4d77c);
+  tween(0.3, 0, k => spoonPivot.scale.setScalar(Math.max(0.001, k)));
+  tween(2.4, 0.2, k => {
+    spoonPivot.rotation.y = -k * Math.PI * 6;
+    fill.rotation.z = k * 9;
+    fill.material.color.copy(c0).lerp(c1, k);
+  }, () => {
+    tween(0.3, 0, k => spoonPivot.scale.setScalar(Math.max(0.001, 1 - k)), () => {
+      spoonPivot.visible = false;
+      state = 'bake'; setHint('Smooth and creamy. Into the oven!'); setAction('Bake it! 🔥'); chime();
+    });
+  });
+}
+
+function bake() {
+  state = 'busy'; setAction(null);
+  tween(0.5, 0, k => bowlGroup.scale.setScalar(Math.max(0.001, 1 - easeIn(k))), () => {
+    bowlGroup.visible = false;
+    cake.visible = true; cake.scale.setScalar(0.001);
+    loafGroup.scale.set(0.9, 0.3, 0.9);
+    tween(0.35, 0, k => cake.scale.setScalar(Math.max(0.001, easeOut(k))));
+    const pale = new THREE.Color(0xf3dc98), gold = new THREE.Color(0xd8953f);
+    tween(3, 0.3, k => {
+      loafGroup.scale.set(0.9 + 0.1 * k, 0.3 + 0.7 * easeOut(k), 0.9 + 0.1 * k);
+      loafMat.color.copy(pale).lerp(gold, k);
+      setHint(`Baking at 180°C… ${Math.ceil(45 * (1 - k))} min`);
+    }, () => {
+      sparkle(new THREE.Vector3(0, 0.12, 0)); chime(); buzz(30);
+      state = 'drizzle';
+      setHint('Golden and risen! Now the drizzle: lemon juice mixed with 75 g sugar.');
+      setAction('Add the drizzle 🍋');
+    });
+  });
+}
+
+function drizzle() {
+  state = 'busy'; setAction(null); setHint('Drizzling…');
+  icing.visible = true; icing.scale.set(0.001, 1, 0.001);
+  tween(0.8, 0, k => { const s = Math.max(0.001, easeOut(k)); icing.scale.set(s, 1, s); });
+  drips.forEach((d, i) => { d.visible = true; tween(0.7, 0.6 + i * 0.04, k => d.scale.y = Math.max(0.001, easeOut(k))); });
+  slices.forEach((s, i) => {
+    const y1 = s.position.y;
+    tween(0.5, 1.5 + i * 0.25, k => { s.visible = true; s.position.y = y1 + 0.15 * (1 - k * k); }, () => { plop(); buzz(10); });
+  });
+  zest.forEach(z => {
+    const y1 = z.position.y;
+    tween(0.5, 2.4 + Math.random() * 0.7, k => { z.visible = true; z.position.y = y1 + 0.1 * (1 - k * k); });
+  });
+  tween(0.01, 3.5, () => {}, () => {
+    sparkle(new THREE.Vector3(0, 0.14, 0)); chime(); buzz([30, 60, 30]);
+    state = 'done';
+    setHint('Ta-da! Your lemon drizzle cake 🍋');
+    setAction('See the full recipe 📖');
+  });
+}
+
+// ---------- UI ----------
+let mode = null;
+let hintTimer;
+function setHint(text, hideAfterMs) {
+  hint.textContent = text; hint.style.opacity = 1;
+  clearTimeout(hintTimer);
+  if (hideAfterMs) hintTimer = setTimeout(() => hint.style.opacity = 0, hideAfterMs);
+}
+function setAction(text) {
+  const b = $('action');
+  b.style.display = text ? 'block' : 'none';
+  if (text) b.textContent = text;
+}
+function showUI(text) {
+  $('start').style.display = 'none';
+  overlay.style.display = 'block';
+  hint.style.display = 'block';
+  $('panel').style.display = 'flex';
+  setHint(text);
+}
+function openRecipe() {
+  overlay.style.display = 'block';
+  $('again').style.display = mode ? 'block' : 'none';
+  $('recipe').style.display = 'flex';
+}
+function closeRecipe() {
+  $('recipe').style.display = 'none';
+  if (!mode) overlay.style.display = 'none';
+}
+
+INGREDIENTS.forEach(def => {
+  const b = document.createElement('button');
+  b.className = 'chip'; b.id = 'chip-' + def.id; b.textContent = def.chip;
+  b.addEventListener('click', () => addIngredient(items.find(it => it.def.id === def.id)));
+  $('chips').appendChild(b);
+});
+$('action').addEventListener('click', () => {
+  if (state === 'mix') mix();
+  else if (state === 'bake') bake();
+  else if (state === 'drizzle') drizzle();
+  else if (state === 'done') openRecipe();
+});
+$('recipeBtn').addEventListener('click', openRecipe);
+$('justRecipe').addEventListener('click', openRecipe);
+$('closeRecipe').addEventListener('click', closeRecipe);
+$('again').addEventListener('click', () => {
+  closeRecipe(); buildKitchen();
+  setHint('Tap each ingredient to add it to the bowl.');
+});
+$('sound').addEventListener('click', () => {
+  soundOn = !soundOn; initAudio();
+  $('sound').textContent = soundOn ? '🔊 Sound' : '🔇 Sound';
+});
+$('recenter').addEventListener('click', () => mode === 'xr' ? placeInFront() : (alphaOffset = null));
+$('exit').addEventListener('click', () => {
+  const s = renderer.xr.getSession();
+  s ? s.end() : location.reload();
+});
+// Taps on buttons shouldn't also count as taps in the AR scene
+for (const id of ['panel', 'recipe']) $(id).addEventListener('beforexrselect', e => e.preventDefault());
+
+buildKitchen();
+state = 'idle';
+
+const raycaster = new THREE.Raycaster();
+function pickItem() {
+  const targets = items.filter(it => !it.added).map(it => it.hit);
+  const hit = raycaster.intersectObjects(targets, false)[0];
+  return hit && hit.object.userData.item;
+}
+
+function tick() {
+  now = performance.now() / 1000;
+  const dt = Math.min(0.05, now - (tick.last || now)); tick.last = now;
+  updateTweens();
+  for (const it of items) {
+    if (it.added) continue;
+    it.model.position.y = 0.006 + 0.006 * Math.sin(now * 2.2 + it.phase);
+    it.model.rotation.y = 0.3 * Math.sin(now * 0.9 + it.phase);
+    it.ring.material.opacity = 0.45 + 0.35 * Math.sin(now * 3 + it.phase);
+  }
+  if (state === 'done') cake.rotation.y += dt * 0.35;
+}
+
+// Check WebXR support up front so the tap goes straight into the session
+let xrSupported = false;
+if (navigator.xr) navigator.xr.isSessionSupported('immersive-ar').then(v => xrSupported = v).catch(() => {});
+
+$('go').addEventListener('click', () => {
+  let motion = Promise.resolve('granted');
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    motion = DeviceOrientationEvent.requestPermission().catch(() => 'denied');
+  }
+  initAudio();
+  const run = xrSupported ? startXR() : motion.then(startFallback);
+  run.catch(e => {
+    $('err').textContent = 'Could not start AR (' + (e.message || e) + '). Tap "Just show me the recipe" instead.';
+  });
+});
+
+// =========================================================
+// Mode 1: Real AR with WebXR (Android / Chrome)
+// Find a table or the floor, tap to set up the kitchen there.
+// =========================================================
+const reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.08, 0.11, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xf7d73a }));
+reticle.matrixAutoUpdate = false; reticle.visible = false;
+scene.add(reticle);
+let lastHit = null;
+const tempM = new THREE.Matrix4();
+
+async function startXR() {
+  renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local');
+  const controller = renderer.xr.getController(0);
+  scene.add(controller);
+  const session = await navigator.xr.requestSession('immersive-ar', {
+    requiredFeatures: ['hit-test'],
+    optionalFeatures: ['dom-overlay'],
+    domOverlay: { root: overlay }
+  });
+  await renderer.xr.setSession(session);
+  mode = 'xr';
+  showUI('Point at a table or the floor until the yellow ring appears, then tap to set up your kitchen.');
+
+  const viewerSpace = await session.requestReferenceSpace('viewer');
+  const hitSource = await session.requestHitTestSource({ space: viewerSpace });
+  session.addEventListener('select', () => {
+    if (!kitchen.visible) { if (lastHit) placeKitchen(lastHit); return; }
+    tempM.identity().extractRotation(controller.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempM);
+    addIngredient(pickItem());
+  });
+  session.addEventListener('end', () => location.reload());
+
+  renderer.setAnimationLoop((t, frame) => {
+    tick();
+    if (frame) {
+      const hits = frame.getHitTestResults(hitSource);
+      if (hits.length) {
+        const pose = hits[0].getPose(renderer.xr.getReferenceSpace());
+        reticle.matrix.fromArray(pose.transform.matrix);
+        lastHit = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+        reticle.visible = !kitchen.visible;
+      } else { lastHit = null; reticle.visible = false; }
+    }
+    renderer.render(scene, camera);
+  });
+}
+
+function placeKitchen(pos) {
+  kitchen.position.copy(pos);
+  const p = new THREE.Vector3();
+  renderer.xr.getCamera().getWorldPosition(p);
+  kitchen.lookAt(p.x, kitchen.position.y, p.z);
+  const first = !kitchen.visible;
+  kitchen.visible = true; reticle.visible = false;
+  if (first) { state = 'add'; setHint('Tap each ingredient to add it to the bowl.'); chime(); }
+}
+function placeInFront() {
+  const xrCam = renderer.xr.getCamera();
+  const pos = new THREE.Vector3(), dir = new THREE.Vector3();
+  xrCam.getWorldPosition(pos); xrCam.getWorldDirection(dir);
+  dir.y = 0; dir.normalize();
+  placeKitchen(pos.addScaledVector(dir, 0.7).add(new THREE.Vector3(0, -0.45, 0)));
+}
+
+// =========================================================
+// Mode 2: Camera + motion sensors (iPhone, and anything without WebXR)
+// The kitchen floats in front of you and stays put as you look around.
+// =========================================================
+let orient = null, alphaOffset = null;
+const euler = new THREE.Euler(), qTmp = new THREE.Quaternion();
+const qFix = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+const zAxis = new THREE.Vector3(0, 0, 1);
+
+async function startFallback(motionPermission) {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+  cam.srcObject = stream; cam.style.display = 'block';
+  await cam.play().catch(() => {});
+  mode = 'fallback';
+
+  kitchen.position.set(0, -FALLBACK_DROP, -FALLBACK_DISTANCE);
+  kitchen.rotation.set(FALLBACK_TILT, 0, 0);
+  kitchen.visible = true;
+  state = 'add';
+
+  if (motionPermission === 'granted') addEventListener('deviceorientation', e => { if (e.alpha !== null) orient = e; });
+  showUI('Tap each ingredient to add it to the bowl.');
+
+  renderer.domElement.addEventListener('pointerdown', e => {
+    const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    addIngredient(pickItem());
+  });
+
+  renderer.setAnimationLoop(() => {
+    tick();
+    if (orient) {
+      const d = THREE.MathUtils.degToRad;
+      const alpha = d(orient.alpha);
+      if (alphaOffset === null) alphaOffset = -alpha;
+      const screenAngle = d((screen.orientation && screen.orientation.angle) || window.orientation || 0);
+      euler.set(d(orient.beta), alpha + alphaOffset, -d(orient.gamma), 'YXZ');
+      camera.quaternion.setFromEuler(euler);
+      camera.quaternion.multiply(qFix);
+      camera.quaternion.multiply(qTmp.setFromAxisAngle(zAxis, -screenAngle));
+    }
+    renderer.render(scene, camera);
+  });
+}
+</script>
+</body>
+</html>
