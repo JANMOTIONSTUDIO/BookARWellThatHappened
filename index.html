@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Bird in AR</title>
+<title>Beach in AR</title>
 <style>
   html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
   #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;display:none;z-index:0}
   canvas{position:fixed;inset:0;display:block;z-index:1}
   #clip{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0}
-  #start{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;background:radial-gradient(circle at 50% 30%,#1d3b2a,#000 70%)}
+  #start{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;background:radial-gradient(circle at 50% 30%,#0f4c6e,#000 70%)}
   h1{margin:0;font-size:30px}
   p{margin:0;opacity:.85;max-width:320px;line-height:1.45}
   button,.btn{font:inherit;font-size:17px;padding:14px 24px;border-radius:999px;border:0;background:#fff;color:#000;font-weight:600;text-decoration:none;cursor:pointer}
@@ -31,8 +31,8 @@
 <video id="clip" src="video.mp4" playsinline webkit-playsinline loop muted preload="auto"></video>
 
 <div id="start">
-  <h1>🐦 Bird in AR</h1>
-  <p>Point your phone around the room and the video will appear in the space in front of you.</p>
+  <h1>🌊 Beach in AR</h1>
+  <p>Point your phone around the room and a window onto the sea will appear in front of you.</p>
   <button id="go">Start AR</button>
   <a class="btn ghost" href="video.mp4">Just watch the video</a>
   <p id="err"></p>
@@ -51,7 +51,7 @@
 import * as THREE from 'three';
 
 // ---- Settings you can tweak ----
-const VIDEO_HEIGHT = 0.85;     // height of the video screen in metres (about 1.6 m wide for this clip)
+const VIDEO_HEIGHT = 1.5;      // height of the video screen in metres (about 0.85 m wide for this portrait clip)
 const FALLBACK_DISTANCE = 2.2; // how far away it floats on iPhone (metres)
 
 const $ = id => document.getElementById(id);
@@ -81,7 +81,7 @@ tv.visible = false;
 scene.add(tv);
 
 function sizeTV() {
-  const aspect = (clip.videoWidth && clip.videoHeight) ? clip.videoWidth / clip.videoHeight : 1280 / 676;
+  const aspect = (clip.videoWidth && clip.videoHeight) ? clip.videoWidth / clip.videoHeight : 478 / 850;
   const w = VIDEO_HEIGHT * aspect;
   picture.scale.set(w, VIDEO_HEIGHT, 1);
   frameMesh.scale.set(w + 0.04, VIDEO_HEIGHT + 0.04, 1);
