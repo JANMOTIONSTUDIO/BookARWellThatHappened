@@ -17,7 +17,7 @@
 </head>
 <body>
   <h1>QR code for your AR page</h1>
-  <p>The link below is filled in for you once this page is on GitHub Pages. Check it, then download and print the code.</p>
+  <p>This QR code opens your AR page. Download it, test-scan it with your phone, then print it.</p>
   <input id="url">
   <div id="qr"></div>
   <div class="row">
@@ -26,7 +26,7 @@
   </div>
 <script>
   const input = document.getElementById('url');
-  input.value = location.href.replace(/qr\.html.*$/, '');
+  input.value = 'https://janmotionstudio.github.io/BookARWellThatHappened/';
   const qr = new QRCode(document.getElementById('qr'), { width: 512, height: 512, correctLevel: QRCode.CorrectLevel.H });
   function make() {
     qr.makeCode(input.value.trim());
