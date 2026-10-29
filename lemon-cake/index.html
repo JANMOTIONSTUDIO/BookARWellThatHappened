@@ -582,13 +582,14 @@ function showUI(text) {
   setHint(text);
 }
 function openRecipe() {
+  if (!mode) { $('start').style.display = 'none'; document.body.style.background = '#e9cf7a'; }
   overlay.style.display = 'block';
   $('again').style.display = mode ? 'block' : 'none';
   $('recipe').style.display = 'flex';
 }
 function closeRecipe() {
   $('recipe').style.display = 'none';
-  if (!mode) overlay.style.display = 'none';
+  if (!mode) { overlay.style.display = 'none'; $('start').style.display = 'flex'; }
 }
 
 INGREDIENTS.forEach(def => {
@@ -740,12 +741,25 @@ const qFix = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 const zAxis = new THREE.Vector3(0, 0, 1);
 
 async function startFallback(motionPermission) {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-  cam.srcObject = stream; cam.style.display = 'block';
-  await cam.play().catch(() => {});
+  // On a laptop/desktop (mouse, no touch screen) or if the camera can't be used,
+  // show a virtual kitchen backdrop instead of the camera view.
+  const isComputer = matchMedia('(pointer: fine)').matches && !('ontouchstart' in window);
+  let usingCamera = false;
+  if (!isComputer && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      cam.srcObject = stream; cam.style.display = 'block';
+      await cam.play().catch(() => {});
+      usingCamera = true;
+    } catch (e) { /* no camera: fall through to the virtual kitchen */ }
+  }
+  if (!usingCamera) {
+    document.body.style.background = 'radial-gradient(ellipse at 50% 30%, #fff6dc 0%, #f3e2b8 45%, #c9a46a 100%)';
+  }
   mode = 'fallback';
 
   kitchen.position.set(0, -FALLBACK_DROP, -FALLBACK_DISTANCE);
+  if (!usingCamera && innerWidth > innerHeight) kitchen.position.set(0, -0.2, -0.95); // closer on a laptop screen
   kitchen.rotation.set(FALLBACK_TILT, 0, 0);
   kitchen.visible = true;
   state = 'add';
